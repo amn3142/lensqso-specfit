@@ -1,0 +1,302 @@
+datainput 2     data L$1_blue_s.dat
+                lines 0 0
+                read {mwl_raw 1 obsfl_raw 2}
+                set mwl=mwl_raw/(1+$2) 
+		data L$1_blue_n.dat
+                lines 0 0
+                read {mwl_raw 1 obsfler 2}
+                #de-redshift to rest_frame
+                set sfl=obsfl_raw*(1+$2)
+                set nfl=obsfler*(1+$2)
+temp       1    lweight 3
+                echo {$1}
+                data Izw1_$1.dat
+                lines 1 5000 
+                read {x_pixel 1 feIIreal 2}
+                set feII=feIIreal
+                set log_x_wave=ln(3500)+(x_pixel-1)*LN(7500.0/3500.0)/(4500-1)
+                set x_wave=exp(log_x_wave)
+                # interpolate feII spectrum for object secptrum wavelength
+                interp2 x_wave feII  mwl feII_temp
+fitplot 9       datainput $1 $2
+                set sprange=<$7 $8>
+                set sprangeB =<$5 $6>
+                set wl=mwl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fl=sfl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fler=nfl  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                define chibest 1000000
+                define a1best 5
+                define a2best 5
+                define slopbest 5
+	           temp $9            
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   	do slop= -5 ,5 , 0.1      {
+                   	set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                   	set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   	set X1=conti
+                   	set X2=fl_feII 
+                   	set vec = {X1 X2}
+                   	delete a   
+                   	set dimen(a)=dimen(vec)
+                   	linfit vec fl a var_a
+                   	set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                   	set fit=a[0]*conti+a[1]*fl_feII
+                   	define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                   	define a1 $(a[0])
+                   	define a2 $(a[1])
+                     		if ($chis<$chibest){
+                     		define chibest $chis
+                     		define a1best $a1
+                     		define a2best $a2
+                     		define slopbest $slop }}
+                     echo $chibest $a1best $a2best $slopbest 
+                define slopA $($slopbest-0.2)
+                define slopB $($slopbest+0.2)
+		define widtha $9
+		define widthb $9
+                do width=  $widtha,$widthb,10 {
+                   temp $($width)
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      do slop= $slopA,$slopB,0.01   {
+                      set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                      set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      set X1=conti
+                      set X2=fl_feII 
+                      set vec = {X1 X2}
+                      delete a    
+                      set dimen(a)=dimen(vec)
+                      linfit vec fl a var_a
+                      set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                      set fit=a[0]*conti+a[1]*fl_feII
+                      define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                      define a1 $(a[0])
+                      define a2 $(a[1])
+                      if ($chis<$chibest){
+                      define chibest $chis
+                      define a1best $a1
+                      define a2best $a2
+                      define slopbest $slop 
+                      define widthbest $width }}
+                      echo $chibest $a1best $a2best $slopbest $widthbest }
+		temp $($widthbest)
+                set conti_temp= (mwl/5100)**$slopbest # normalized at 5000A
+                set model_conti=$a1best*conti_temp
+                set model_FeII=$a2best*feII_temp
+                set model_subt=model_conti+model_FeII
+                set model_G=model_conti-model_conti
+                set finalsp=sfl-model_FeII 
+plot 9  	expand 0.6
+		window -4 -4 $1 $2
+		limits 5001 5450 $7 $8 
+		ticksize 50 200 0.1 0.5 
+		ctype gray
+                connect mwl sfl          
+		add_ctype gray 200 200 200
+		ctype black	
+		connect mwl finalsp
+		ctype black
+		relocate 5040 $9		
+		label $4
+                box $5 $6 0 3
+		set y = {0 100}
+		set x = y*0 + 5175
+		ltype 1		
+		connect x y
+		set y = {0 100}
+		set x = y*0 + 5270
+		ltype 1		
+		connect x y
+		ltype 0 
+plotall		erase
+		ctype black
+		ltype 0
+		expand 1.4
+		fitplot 59c  0.0483 15 30  4400 4620 5100 5310 1570
+		plot 1 1 59 1554+3238 1 3 15 24 23.1
+		#ctype gray
+		#draw_arrow 5175 15.3 5175 15.4
+		#draw_arrow 5270 15.2 5270 15.7
+		#ctype black
+		#fitplot 60c  0.0465 12 25   4450 4630 5100 5320 580
+		#plot 2 1 60 1557+0830 1 3 15 20.7 20.15
+		fitplot 61c  0.0532 10 25  4430 4580 5100 5290 4450
+		plot 2 1 61 1605+3305 1 3 11.5 20 19.1
+		relocate 5060 8.5
+		expand 1.4
+		label Rest wavelength (\AA)
+		fitplot 62c  0.0585  1 3  4400 4650 5080 5260 2930
+		plot 3 1 62 1606+3324 1 3 15 27 25.8
+		fitplot 51c  0.0541  1 3  4410 4650 5100 5290 1160 
+		plot 1 2 51 1405-0259 0 3 1.2 2.4 2.26
+		relocate 4920 1.35
+		expand 1.4
+		angle 90
+		label Flux (arbitrary units)
+		angle 0
+		fitplot 53c  0.0559   1 3  4400 4620 5100 5280 3490
+		plot 2 2 53 1419+0754 0 3 1.25 2.55 2.4
+		fitplot 54c  0.0365 0.5 2.5  4420 4630 5100 5380 1050
+		plot 3 2 54 1434+4839 0 3 1.1 2 1.9
+		fitplot 57c  0.0304  10 24  4440 4580 5100 5405 990
+		plot 4 2 57 1535+5754 1 3 12. 18.5 17.8
+		fitplot 34c  0.0550  1 2.5   4480 4650 5100 5285 1970
+		plot 1 3 34 1049+2451 0 3 1.1 1.52 1.47
+		fitplot 35c  0.0355   1 2.7  4420 4600 5100 5370 4040
+		plot 2 3 35 1101+1102 0 3  1.1 2.55 2.4
+		fitplot 43c  0.0229  1 2.5  4430 4620 5100 5440 2800
+		plot 3 3 43 1210+3820 0 3 1.25 1.8 1.74	
+		fitplot 46c  0.047  1. 3   4430 4650 5100 5310 1210
+		plot 4 3 46 1250-0249 0 3 1.15 2 1.9
+		fitplot 11c 0.0545   1 3  4400 4600 5100 5295 1000
+		plot 1 4 11 0121-0102 0 3 1.05 1.8 1.72 
+		fitplot 6c  0.076   1.5 3  4420 4650 5050 5190 2320
+		plot 2 4 6  0353-0623 0 3 1.35 2.25 2.15
+		fitplot 1c 0.041 1 3 4430 4650 5100 5360 1940
+		plot 3 4 1  0802+3104 0 3 1.2 2.3 2.18
+		fitplot 32c 0.0524  1 2.5  4430 4650 5100 5295 840
+		plot 4 4 32 1042+0414 0 3 1.2 2. 1.92 
+plothard 	dev postencap feiisub.eps
+		plotall
+		dev x11
+plotnew 9  	expand 0.6
+		window -3 -5 $1 $2
+		limits 5001 5450 $7 $8 
+		ticksize 50 200 0.1 0.5 
+		ctype gray
+		stats sfl a b c
+		set sfln=sfl/a
+                connect mwl sfln          
+		add_ctype gray 200 200 200
+		ctype black	
+		connect mwl finalsp
+		ctype black
+		relocate 5040 $9		
+		label $4
+                box $5 $6 0 3
+		set y = {0 100}
+		set x = y*0 + 5175
+		ltype 1		
+		connect x y
+		set y = {0 100}
+		set x = y*0 + 5270
+		ltype 1		
+		connect x y
+		ltype 0 
+plotallnew	erase
+		ctype black
+		ltype 0
+		expand 1.4
+		fitplot 59c  0.0483 15 30  4400 4620 5100 5310 1570
+		plotnew 1 1 59 1554+3238 1 3 15 24 23.1
+		fitplot 61c  0.0532 10 25  4430 4580 5100 5290 4450
+		plotnew 2 1 61 1605+3305 1 3 11.5 20 19.1
+		relocate 4980 8.5
+		expand 1.4
+		label Rest wavelength (\AA)
+		fitplot 62c  0.0585  1 3  4400 4650 5080 5260 2930
+		plotnew 3 1 62 1606+3324 1 3 15 27 25.8
+		fitplot 53c  0.0559   1 3  4400 4620 5100 5280 3490
+		plotnew 1 2 53 1419+0754 0 3 1.25 2.55 2.4
+		fitplot 54c  0.0365 0.5 2.5  4420 4630 5100 5380 1050
+		plotnew 2 2 54 1434+4839 0 3 1.1 2 1.9
+		fitplot 57c  0.0304  10 24  4440 4580 5100 5405 990
+		plotnew 3 2 57 1535+5754 1 3 12. 18.5 17.8
+		fitplot 43c  0.0229  1 2.5  4430 4620 5100 5440 2800
+		plotnew 1 3 43 1210+3820 0 3 1.25 1.8 1.74	
+		fitplot 46c  0.047  1. 3   4430 4650 5100 5310 1210
+		relocate 4920 1.
+		expand 1.4
+		angle 90
+		label Flux (arbitrary units)
+		angle 0
+		plotnew 2 3 46 1250-0249 0 3 1.15 2 1.9
+		fitplot 51c  0.0541  1 3  4410 4650 5100 5290 1160 
+		plotnew 3 3 51 1405-0259 0 3 1.2 2.4 2.26
+		fitplot 32c 0.0524  1 2.5  4430 4650 5100 5295 840
+		plotnew 1 4 32 1042+0414 0 3 1.2 2. 1.92 
+		fitplot 34c  0.0550  1 2.5   4480 4650 5100 5285 1970
+		plotnew 2 4 34 1049+2451 0 3 1.1 1.52 1.47
+		fitplot 35c  0.0355   1 2.7  4420 4600 5100 5370 4040
+		plotnew 3 4 35 1101+1102 0 3  1.1 2.55 2.4
+		fitplot 11c 0.0545   1 3  4400 4600 5100 5295 1000
+		plotnew 1 5 11 0121-0102 0 3 1.05 1.8 1.72 
+		fitplot 6c  0.076   1.5 3  4420 4650 5050 5190 2320
+		plotnew 2 5 6  0353-0623 0 3 1.35 2.25 2.15
+		fitplot 1c 0.041 1 3 4430 4650 5100 5360 1940
+		plotnew 3 5 1  0802+3104 0 3 1.2 2.3 2.18
+plotnorm 9  	expand 0.6
+		window -3 -5 $1 $2
+		limits 5001 5450 $7 $8 
+		ticksize 50 200 0.1 0.5 
+		ctype gray
+		set sflt=sfl if (mwl>5001 && mwl<5450)
+		stats sflt a b c
+		set norm=$a+0*sflt
+		set sfln=sflt/norm
+		set mwlt=mwl if (mwl>5001 && mwl<5450)
+                connect mwlt sfln          
+		add_ctype gray 200 200 200
+		ctype black	
+		set finalspt=finalsp if (mwl>5001 && mwl<5450)
+		stats finalspt a b c
+		set normsp=$a+0*finalspt
+		set finalspn=finalspt/normsp-0.2
+		connect mwlt finalspn
+		ctype black
+		relocate 5040 $9		
+		label $4
+                box $5 $6 0 0
+		set y = {0 100}
+		set x = y*0 + 5175
+		ltype 1		
+		connect x y
+		set y = {0 100}
+		set x = y*0 + 5270
+		ltype 1		
+		connect x y
+		ltype 0 
+plotallnorm	erase
+		ctype black
+		ltype 0
+		expand 1.4
+		fitplot 59c  0.0483 15 30  4400 4620 5100 5310 1930
+		plotnorm 1 1 59 1554+3238 1 2 0.2 1.2 1.05
+		fitplot 61c  0.0532 10 25  4430 4580 5100 5290 4520
+		plotnorm 2 1 61 1605+3305 1 0 0.2 1.2 1.05
+		relocate 4980 -0.2
+		expand 1.4
+		label Rest wavelength (\AA)
+		fitplot 62c  0.0585  1 3  4400 4650 5080 5260 2410
+		plotnorm 3 1 62 1606+3324 1 0  0.2 1.2 1.05
+		fitplot 53c  0.0559   1 3  4400 4620 5100 5280 3470
+		plotnorm 1 2 53 1419+0754 0 2  0.2 1.2 1.05
+		fitplot 54c  0.0365 0.5 2.5  4420 4630 5100 5380 1000
+		plotnorm 2 2 54 1434+4839 0 0  0.2 1.2 1.05
+		fitplot 57c  0.0304  10 24  4440 4580 5100 5405 980
+		plotnorm 3 2 57 1535+5754 0 0  0.2 1.2 1.05
+		fitplot 43c  0.0229  1 2.5  4430 4620 5100 5440 2540
+		plotnorm 1 3 43 1210+3820 0 2  0.2 1.2 1.05	
+		relocate 4910 -0.1
+		expand 1.4
+		angle 90
+		label Normalized flux 
+		angle 0
+		fitplot 46c  0.047  1. 3   4430 4650 5100 5310 1160
+		plotnorm 2 3 46 1250-0249 0 0  0.2 1.2 1.05
+		fitplot 51c  0.0541  1 3  4410 4650 5100 5290 1200 
+		plotnorm 3 3 51 1405-0259 0 0  0.2 1.2 1.05
+		fitplot 32c 0.0524  1 2.5  4430 4650 5100 5295 850
+		plotnorm 1 4 32 1042+0414 0 2 0.2 1.2 1.05
+		fitplot 34c  0.0550  1 2.5   4480 4650 5100 5285 1900
+		plotnorm 2 4 34 1049+2451 0 0 0.2 1.2 1.05
+		fitplot 35c  0.0355   1 2.7  4420 4600 5100 5370 3710
+		plotnorm 3 4 35 1101+1102 0 0  0.2 1.2 1.05
+		fitplot 11c 0.0545   1 3  4400 4600 5100 5295 1170
+		plotnorm 1 5 11 0121-0102 0 2  0.2 1.2 1.05
+		fitplot 6c  0.076   1.5 3  4420 4650 5050 5190 2280
+		plotnorm 2 5 6  0353-0623 0 0  0.2 1.2 1.05
+		fitplot 1c 0.041 1 3 4430 4650 5100 5360 2060
+		plotnorm 3 5 1  0802+3104 0 0  0.2 1.2 1.05
+plothardnorm 	dev postencap feiisubnorm.eps
+		plotallnorm
+		dev x11

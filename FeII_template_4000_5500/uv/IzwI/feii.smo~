@@ -1,0 +1,643 @@
+# FeII fit using FeII template
+# observed flux = a1 * lambda**(-1.56) + a2 * feII  +a3 *1
+# 
+# first do fitall with 4 parameters with initial FeII.
+# check chi2 with chiplot
+# do fitall2 to determine the best slop.
+# check chi2 with chi2plot
+#
+# do fitbeta to determine best FeII width with a given slop
+# check chi2 with chiwidthplot
+#
+# check sp with each component with fitone
+# check subtraction with subplot
+#
+# 1 name of target
+# 2 redshift
+# 3 line width for FeII
+# 4 spectral slope
+
+
+####### Prepare IZw1 template ###############
+# temp: read in FeII template with given width
+#       then interpolate for object wavelength ranges
+#1 line width 
+temp       1    lweight 3
+                echo {$1}
+                data Izw1_$1.dat
+                lines 1 5000 
+                read {x_pixel 1 feIIreal 2}
+                set feII=feIIreal
+                set log_x_wave=ln(3500)+(x_pixel-1)*LN(7500.0/3500.0)/(4500-1)
+                set x_wave=exp(log_x_wave)
+                # interpolate feII spectrum for object secptrum wavelength
+                interp2 x_wave feII  mwl feII_temp
+
+plottemp  1     temp $1
+                ptype 1 3
+		set feii=feII_temp*1e16
+		connect mwl feii
+plotfeiitemp    erase
+		ctype default
+                limits 3700 5500 0 40            
+                ylabel Flux/10^{-16} (erg/cm^{2}/s/\AA)
+                # reference lines
+                set x={5006.843 5006.843}
+                set x2={4958.911 4958.911}
+                set x3={4861.363 4861.363}
+                set y={-1000 1000} 
+                connect x y
+                connect x2 y
+                connect x3 y
+                box 1 2 0 0
+		plottemp 1400
+		ctype green
+		plottemp 2000
+		ctype blue
+		plottemp 3000
+		ctype yellow
+		plottemp 4000
+		ctype red
+		plottemp 5000
+		
+
+
+########## Prepare data ###############3
+#1 name of target #2 redshift #3 line width #4 agn  specral slop
+datainput 2     data L$1_blue_s.dat
+                lines 0 0
+                read {mwl_raw 1 obsfl_raw 2}
+                set mwl=mwl_raw/(1+$2) 
+		data L$1_blue_n.dat
+                lines 0 0
+                read {mwl_raw 1 obsfler 2}
+                #de-redshift to rest_frame
+                set sfl=obsfl_raw*(1+$2)
+                set nfl=obsfler*(1+$2)
+
+##1 name of target #2 redshift #3 line width #4 ymax #5 ymin  #6 sprangeB1 #7 sprangeB2 #8 sprange1 #9 sprange2
+#10 widht start 11 width end 12 width step
+fitall 9        expand 1.01
+                datainput $1 $2
+                # define fitting region for continuum
+                set sprange=<$8 $9>
+                set sprangeB =<$6 $7>
+                #set sprange =<5050 5350>
+                #set sprangeB =<4400 4600>
+                set wl=mwl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fl=sfl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fler=nfl  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                # determine the initial slope with initial FeII FWHM
+                define chibest 1000000
+                define a1best 5
+                define a2best 5
+                define slopbest 5
+	           temp $3             
+#                   set fl_feII=feII_temp    if (mwl <=$(sprange[1]) && mwl >=$(sprange[0]))
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+
+                   do slop= -5 ,5 , 0.1      {
+                   set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                   set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   set X1=conti
+                   set X2=fl_feII 
+                   set vec = {X1 X2}
+                   delete a   
+                   set dimen(a)=dimen(vec)
+                   linfit vec fl a var_a
+                   set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                   set fit=a[0]*conti+a[1]*fl_feII
+                   define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                   define a1 $(a[0])
+                   define a2 $(a[1])
+                     if ($chis<$chibest){
+                     define chibest $chis
+                     define a1best $a1
+                     define a2best $a2
+                     define slopbest $slop }}
+                     echo $chibest $a1best $a2best $slopbest 
+                     #plot
+                # determine the best width and  best slope          
+                define slopA $($slopbest-0.2)
+                define slopB $($slopbest+0.2)
+                erase
+                #do width=  150,5000,20  {
+                do width=  500,5000,20 {
+                #do width= 1400,2000,10  {
+                   temp $($width)
+#                   set fl_feII=feII_temp    if (mwl <=$(sprange[1]) && mwl >=$(sprange[0]))
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      do slop= $slopA,$slopB,0.01   {
+                      set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+#                      set conti=conti_temp  if (mwl <=$(sprange[1]) && mwl >=$(sprange[0]))
+                      set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      set X1=conti
+                      set X2=fl_feII 
+                      set vec = {X1 X2}
+                      delete a    
+                      set dimen(a)=dimen(vec)
+                      linfit vec fl a var_a
+                      set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                      set fit=a[0]*conti+a[1]*fl_feII
+                      define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                      define a1 $(a[0])
+                      define a2 $(a[1])
+                      if ($chis<$chibest){
+                      define chibest $chis
+                      define a1best $a1
+                      define a2best $a2
+                      define slopbest $slop 
+                      define widthbest $width }}
+                      plot $4 $5 
+                      echo $chibest $a1best $a2best $slopbest $widthbest }}
+                #erase
+                plotfinal $1 $4 $5
+                set finalspS=finalsp*1E-12/(1+$2)
+                set finalspN=nfl*1E-12/(1+$2)
+                #set finalspS=finalsp/(1+$2)
+                #set finalspN=nfl/(1+$2)
+                print s$1FeII.dat '%10.3f %10.4e %10.4f\n' {mwl_raw finalspS finalsp}
+                print n$1FeII.dat '%10.3f %10.4e %10.4f\n' {mwl_raw finalspN nfl}
+
+plot    2       ctype default
+                location 4000 32000 20000 32000
+                set fit_conti=$a1best*conti
+                set fit_contiall=$a1best*conti_temp
+                set fit_fe=$a2best*fl_feII
+                set fit=fit_conti+fit_fe              
+                set fit_total=fit_contiall+$a2best*feII_temp
+                define yup $($2*2)
+                limits 4200 5500 $1  $2             
+                box 0 2 0 0
+                ylabel Flux/10^{-12} (erg/cm^{2}/s/\AA)
+                # reference lines
+                ctype yellow 
+                set x={5006.843 5006.843}
+                set x2={4958.911 4958.911}
+                set x3={4861.363 4861.363}
+                set y={-1000 1000} 
+                connect x y
+                connect x2 y
+                connect x3 y
+                ctype default
+                connect mwl sfl          
+                ctype magenta
+                connect mwl fit_total      
+                ctype red
+                ptype 1 3
+                points wl fit      
+                ctype cyan 
+                connect mwl fit_contiall
+                ctype blue   
+                points  wl fit_conti
+                ctype green  
+                connect wl fit_fe
+                ctype default
+                limits 0 100 0 100
+                relocate 10 90
+                putlabel 6 $widthbest
+                relocate 10 80
+                putlabel 6 $slopbest
+                relocate 10 70
+                putlabel 6 $chibest
+
+
+
+
+fittemp 9       erase
+                datainput $1 $2
+                set sprange=<$7 $8>
+                set sprangeB =<$5 $6>
+                set wl=mwl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fl=sfl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fler=nfl  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                define chibest 1000000
+                define a1best 5
+                define a2best 5
+                define slopbest 5
+	           temp $9            
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   	do slop= -5 ,5 , 0.1      {
+                   	set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                   	set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   	set X1=conti
+                   	set X2=fl_feII 
+                   	set vec = {X1 X2}
+                   	delete a   
+                   	set dimen(a)=dimen(vec)
+                   	linfit vec fl a var_a
+                   	set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                   	set fit=a[0]*conti+a[1]*fl_feII
+                   	define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                   	define a1 $(a[0])
+                   	define a2 $(a[1])
+                     		if ($chis<$chibest){
+                     		define chibest $chis
+                     		define a1best $a1
+                     		define a2best $a2
+                     		define slopbest $slop }}
+                     echo $chibest $a1best $a2best $slopbest 
+                define slopA $($slopbest-0.2)
+                define slopB $($slopbest+0.2)
+                erase
+		define widtha $9
+		define widthb $9
+                do width=  $widtha,$widthb,10 {
+                   temp $($width)
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      do slop= $slopA,$slopB,0.01   {
+                      set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                      set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      set X1=conti
+                      set X2=fl_feII 
+                      set vec = {X1 X2}
+                      delete a    
+                      set dimen(a)=dimen(vec)
+                      linfit vec fl a var_a
+                      set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                      set fit=a[0]*conti+a[1]*fl_feII
+                      define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                      define a1 $(a[0])
+                      define a2 $(a[1])
+                      if ($chis<$chibest){
+                      define chibest $chis
+                      define a1best $a1
+                      define a2best $a2
+                      define slopbest $slop 
+                      define widthbest $width }}
+                      plot $3 $4 
+                      echo $chibest $a1best $a2best $slopbest $widthbest }
+                plotfinal $1 $3 $4
+                set finalspS=finalsp*1E-12/(1+$2)
+                set finalspN=nfl*1E-12/(1+$2)
+                print s$1FeII.dat '%10.3f %10.4e %10.4f\n' {mwl_raw finalspS finalsp}
+                print n$1FeII.dat '%10.3f %10.4e %10.4f\n' {mwl_raw finalspN nfl}
+
+
+fitplot 9       erase
+                datainput $1 $2
+                set sprange=<$7 $8>
+                set sprangeB =<$5 $6>
+                set wl=mwl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fl=sfl    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                set fler=nfl  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                define chibest 1000000
+                define a1best 5
+                define a2best 5
+                define slopbest 5
+	           temp $9            
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   	do slop= -5 ,5 , 0.1      {
+                   	set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                   	set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                   	set X1=conti
+                   	set X2=fl_feII 
+                   	set vec = {X1 X2}
+                   	delete a   
+                   	set dimen(a)=dimen(vec)
+                   	linfit vec fl a var_a
+                   	set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                   	set fit=a[0]*conti+a[1]*fl_feII
+                   	define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                   	define a1 $(a[0])
+                   	define a2 $(a[1])
+                     		if ($chis<$chibest){
+                     		define chibest $chis
+                     		define a1best $a1
+                     		define a2best $a2
+                     		define slopbest $slop }}
+                     echo $chibest $a1best $a2best $slopbest 
+                define slopA $($slopbest-0.2)
+                define slopB $($slopbest+0.2)
+                erase
+		define widtha $9
+		define widthb $9
+                do width=  $widtha,$widthb,10 {
+                   temp $($width)
+                   set fl_feII=feII_temp    if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      do slop= $slopA,$slopB,0.01   {
+                      set conti_temp= (mwl/5100)**$slop # normalized at 5000A
+                      set conti=conti_temp  if ((mwl <=$(sprangeB[1]) && mwl >=$(sprangeB[0])) || (mwl <=$(sprange[1]) && mwl >=$(sprange[0])))
+                      set X1=conti
+                      set X2=fl_feII 
+                      set vec = {X1 X2}
+                      delete a    
+                      set dimen(a)=dimen(vec)
+                      linfit vec fl a var_a
+                      set fit_total=a[0]*conti_temp+a[1]*feII_temp
+                      set fit=a[0]*conti+a[1]*fl_feII
+                      define chis $(sum(((fl-fit)/fler)**2)/(dimen(fl)-2))
+                      define a1 $(a[0])
+                      define a2 $(a[1])
+                      if ($chis<$chibest){
+                      define chibest $chis
+                      define a1best $a1
+                      define a2best $a2
+                      define slopbest $slop 
+                      define widthbest $width }}
+                      echo $chibest $a1best $a2best $slopbest $widthbest }
+                plotfinalnew $1 $3 $4
+
+
+
+
+plot    2       ctype default
+                location 4000 32000 20000 32000
+                set fit_conti=$a1best*conti
+                set fit_contiall=$a1best*conti_temp
+                set fit_fe=$a2best*fl_feII
+                set fit=fit_conti+fit_fe              
+                set fit_total=fit_contiall+$a2best*feII_temp
+                define yup $($2*2)
+                limits 4200 5500 $1  $2             
+                box 0 2 0 0
+                ylabel Flux/10^{-12} (erg/cm^{2}/s/\AA)
+                # reference lines
+                ctype yellow 
+                set x={5006.843 5006.843}
+                set x2={4958.911 4958.911}
+                set x3={4861.363 4861.363}
+                set y={-1000 1000} 
+                connect x y
+                connect x2 y
+                connect x3 y
+                ctype default
+                connect mwl sfl          
+                ctype magenta
+                connect mwl fit_total      
+                ctype red
+                ptype 1 3
+                points wl fit      
+                ctype cyan 
+                connect mwl fit_contiall
+                ctype blue   
+                points  wl fit_conti
+                ctype green  
+                connect wl fit_fe
+                ctype default
+                limits 0 100 0 100
+                relocate 10 90
+                putlabel 6 $widthbest
+                relocate 10 80
+                putlabel 6 $slopbest
+                relocate 10 70
+                putlabel 6 $chibest
+
+plotfinalnew 3  #read in best fit
+		temp $($widthbest)
+                set conti_temp= (mwl/5100)**$slopbest # normalized at 5000A
+                set model_conti=$a1best*conti_temp
+                set model_FeII=$a2best*feII_temp
+                set model_subt=model_conti+model_FeII
+                set model_G=model_conti-model_conti
+		#plot residual or FeII template
+		expand 1.2
+                location 4000 32000  2500 12500
+		#window -1 -2 1 1                
+		limits 4400 5300 0 0.6
+     		ticksize 50 200 0.1 0.5 
+                box 1 2 0 0
+		expand 1.4
+		xlabel Rest wavelength (\AA)
+		expand 1.2
+                #connect mwl finalsp
+                connect mwl model_FeII
+		#plot spectrum and fit
+		#window -1 -2 1 2
+ 		location 4000 32000   12500 32500
+               #location 4000 32000 20000 32000
+		ctype default
+                limits 4400 5300 1.01 2.99    
+                box 0 2 0 0
+		relocate 4320 0.9 
+		angle 90
+		expand 1.4
+                label Flux (arbitrary units)
+		angle 0
+		expand 1.2
+                ctype default
+                connect mwl sfl          
+                ctype black
+		ltype 2
+                connect mwl model_conti 
+		ltype 0
+		#ctype red     
+                ltype 1
+		connect mwl model_subt
+                ltype 0
+		ctype default
+                limits 0 100 0 100
+                relocate 10 80
+                define FeII_sigma $(($widthbest**2+(900/2.45)**2+165**2)**0.5)
+                ctype default
+                set finalsp=sfl-model_FeII 
+plothard	dev postencap example_feii_l11.eps
+		fitplot 11c 0.0545   1 3  4400 4600 5100 5295 1000
+		dev x11
+
+
+
+plotfinal  3    location 4000 32000   10000 20000
+                temp $($widthbest)
+                set conti_temp= (mwl/5100)**$slopbest # normalized at 5000A
+                set model_conti=$a1best*conti_temp
+                set model_FeII=$a2best*feII_temp
+                set model_subt=model_conti+model_FeII
+                set model_G=model_conti-model_conti
+                limits 4200 5500 $2 $3     
+                box 0 2 0 0
+                ylabel Flux/10^{-12} (erg/cm^{2}/s/\AA)
+                ctype default
+                connect mwl sfl          
+                ctype yellow
+                connect mwl model_conti 
+                ctype red     
+                connect mwl model_subt
+                ctype blue    
+                connect mwl model_FeII
+                ctype default
+                limits 0 100 0 100
+                relocate 10 90
+                putlabel 6 object=$1
+                relocate 10 80
+                define FeII_sigma $(($widthbest**2+(900/2.45)**2+165**2)**0.5)
+                putlabel 6 \sigma (FeII) = $FeII_sigma
+                relocate 10 70
+                putlabel 6 FeII file= $widthbest
+                relocate 10 60
+                putlabel 6 slop=$slopbest
+                relocate 10 50
+                putlabel 6 \Chi^{2}=$chibest
+                ylabel Flux/10^{-12} (erg/cm^{2}/s/\AA)
+                ctype default
+                set finalsp=sfl-model_FeII 
+                location 4000 32000  2000 10000
+                limits 4200 5500 $2 $3         
+                box 1 2 0 0
+                connect mwl finalsp
+                set x={-100 10000}
+                set y={0 0}
+                ctype yellow
+                connect x y
+plotnofeii      dev postencap 1mbh_nofeii.eps
+		fitall 1mbh  0.041   1400 1 3 4450 4650 5100 5350
+		hardcopy
+		dev postencap 2mbh_nofeii.eps
+		fitall 2mbh  0.043   1400 2 4  4450 4650 5100 5370
+		hardcopy
+		dev postencap 5mbh_nofeii.eps
+		fitall 5mbh  0.06    1400 0.5 1 4450 4600 5050 5250
+		hardcopy
+		dev postencap 8mbh_nofeii.eps
+		fitall 8mbh  0.085   1400 1 3  4400 4600 5050 5150
+		hardcopy
+		dev postencap 13mbh_nofeii.eps
+		fitall 13mbh 0.021   1400 0.7 1.9  4450 4700 5050 5470
+		hardcopy
+		dev postencap 15mbh_nofeii.eps
+		fitall 15mbh 0.038   1400 5 9  4450 4650 5050 5350 
+		hardcopy
+		dev postencap 49mbh_nofeii.eps
+		fitall 49mbh 0.0559  1400 0.5 2   4450 4650 5050 5280
+		hardcopy
+		dev postencap 50mbh_nofeii.eps
+		fitall 50mbh 0.0501  1400 0.5 2  4450 4650 5070 5300
+		hardcopy
+		dev postencap 63mbh_nofeii.eps
+		fitall 63mbh 0.0412  1400 10 25   4400 4600 5050 5350
+		hardcopy
+		dev postencap 66mbh_nofeii.eps
+		fitall 66mbh	  0.098   1400 12 30  4400 4600 5050 5300
+		hardcopy
+		dev postencap 68mbh_nofeii.eps
+		fitall 68mbh	  0.0727  1400 7 30 4400 4600 5050 5300
+		hardcopy
+		dev postencap 69mbh_nofeii.eps
+		fitall 69mbh	  0.0468  1400 9 15  4470 4650 5090 5330
+		hardcopy
+		dev postencap 88mbh_nofeii.eps
+		fitall 88mbh	  0.0841    1400 1 3   4450 4650 5050 5135
+		hardcopy
+		dev postencap 96ambh_nofeii.eps
+		fitall 96mbh	  0.0805    1400 10 30   4400 4600 5050 5150
+		hardcopy
+		dev postencap 96bmbh_nofeii.eps
+		fitall 96mbh	  0.080    1400 10 30   4420 4600 5050 5150
+		hardcopy
+		dev postencap 96cmbh_nofeii.eps
+		fitall 96mbh	  0.079    1400 10 30   4420 4600 5050 5150
+		hardcopy
+		dev postencap 70mbh_nofeii.eps
+		fitall 70mbh	  0.046    1400 0.3 1  4400 4600 5070 5320
+		hardcopy
+		dev x11
+plotfeii        dev postencap 4mbh_feii.eps
+		fitall 4mbh  0.0505   1400 1 2.5  4450 4650 5050 5310
+		hardcopy
+		dev postencap 6mbh_feii.eps
+		fitall 6mbh  0.076   1400 2 4  4420 4650 5050 5190
+		hardcopy
+		dev postencap 11mbh_feii.eps
+		fitall 11mbh 0.0545   1400 7 17  4400 4600 5050 5350
+		hardcopy
+		dev postencap 34mbh_feii.eps
+		fitall 34mbh 0.0550  1400 1 2.5   4450 4650 5100 5285
+		hardcopy
+		dev postencap 35mbh_feii.eps
+		fitall 35mbh 0.0355  1400 1 2.7  4420 4630 5070 5370 
+		hardcopy
+		dev postencap 46mbh_feii.eps
+		fitall 46mbh 0.047  1400 1.5 3   4450 4750 5060 5310
+		hardcopy
+		dev postencap 58mbh_feii.eps
+		fitall 58mbh 0.0481  1400 10 22   4420 4680 5060 5310
+		hardcopy
+		dev postencap 32mbh_feii.eps
+		fitall 32mbh 0.0524  1400 1 2.5  4450 4670 5050 5300
+		hardcopy
+		dev postencap 33mbh_feii.eps
+		fitall 33mbh 0.0475  1400 1 2.5  4450 4600 5090 5320
+		hardcopy
+		dev postencap 43mbh_feii.eps
+		fitall 43mbh 0.0229  1400 5 9  4400 4650 5070 5440
+		hardcopy
+		dev postencap 51mbh_feii.eps
+		fitall 51mbh 0.0541  1400 1 3  4440 4670 5070 5290
+		hardcopy
+		dev postencap 53mbh_feii.eps
+		fitall 53mbh 0.0559  1400 0.5 2  4400 4650 5050 5280
+		hardcopy
+		dev postencap 54mbh_feii.eps
+		fitall 54mbh 0.0365  1400 0.5 2  4430 4640 5070 5380
+		hardcopy
+		dev postencap 57mbh_feii.eps
+		fitall 57mbh 0.0304  1400 10 22  4420 4620 5080 5400
+		hardcopy
+		dev postencap 59mbh_feii.eps
+		fitall 59mbh 0.0483  1400 15 30  4400 4620 5070 5300
+		hardcopy
+		dev postencap 60mbh_feii.eps
+		fitall 60mbh 0.0465  1400 12 25   4450 4630 5070 5320
+		hardcopy
+		dev postencap 61mbh_feii.eps
+		fitall 61mbh 0.0532  5000 15 25  4450 4650 5080 5290
+		hardcopy
+		dev postencap 62mbh_feii.eps
+		fitall 62mbh 0.0585  1400 10 30  4400 4650 5080 5260
+		hardcopy
+		dev postencap 67mbh_feii.eps
+		fitall 67mbh	  0.0581  1400 10 20  4410 4600 5050 5270
+		hardcopy
+		dev postencap 71mbh_feii.eps
+		fitall 71mbh	  0.0615    1400 0.4 0.8 4450 4670 5030 5250
+		hardcopy
+		dev postencap 73mbh_feii.eps
+		fitall 73mbh	  0.0809    1400 0.4 1   4420 4650 5050 5160
+		hardcopy
+		dev postencap 74mbh_feii.eps
+		fitall 74mbh	  0.0925    1400 0.3 1  4400 4650 5050 5100
+		hardcopy
+		dev postencap 76mbh_feii.eps
+		fitall 76mbh	  0.0842    1400 2 8  4400 4700 5050 5140
+		hardcopy
+		dev postencap 66ambh_feii.eps
+		fitall 77mbh	  0.0618    1400 2 5  4420 4670 5060 5250
+		hardcopy
+		dev postencap 77bmbh_feii.eps
+		fitall 77mbh	  0.0632    1400 2 5  4420 4670 5060 5250
+		hardcopy
+		dev postencap 78ambh_feii.eps
+		fitall 78mbh	  0.0712    1400 1.3 2.2  4450 4650 5070 5200
+		hardcopy
+		dev postencap 78bmbh_feii.eps
+		fitall 78mbh	  0.068    1400 1.3 2.2  4450 4650 5070 5200
+		hardcopy
+		dev postencap 79ambh_feii.eps
+		fitall 79mbh	  0.0741    1400 1. 3  4420 4650 5050 5190
+		hardcopy
+		dev postencap 79bmbh_feii.eps
+		fitall 79mbh	  0.0747    1400 1. 3  4420 4650 5050 5190
+		hardcopy
+		dev postencap 79cmbh_feii.eps
+		fitall 79mbh	  0.076    1400 1. 3  4420 4650 5050 5190
+		hardcopy
+		dev postencap 83mbh_feii.eps
+		fitall 83mbh	  0.0882    1400 1 3   4410 4630 5050 5120
+		hardcopy
+		dev postencap 91mbh_feii.eps
+		fitall 91mbh	  0.0722    1400 0.7 1.5   4450 4600 5030 5200
+		hardcopy
+		dev postencap 99mbh_feii.eps
+		fitall 99mbh	  0.0832    1400 9 20   4400 4670 5060 5145
+		hardcopy
+		dev postencap 102ambh_feii.eps
+		fitall 102mbh    0.0912    1400 8 23   4420 4650 5050 5105
+		hardcopy
+		dev postencap 102bmbh_feii.eps
+		fitall 102mbh    0.0898    1400 8 23   4420 4650 5050 5105
+		hardcopy
+		dev postencap 103mbh_feii.eps
+		fitall 103mbh    0.0821    1400 10 30   4400 4650 5050 5150
+		hardcopy
+		dev x11
+
